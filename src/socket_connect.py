@@ -67,10 +67,11 @@ class ServerProcess:
             result.append(datas[data_index])
             data_index += 1
 
-        sql.save_data(tuple(result))  # 保存数据到数据库
+        sql.save_vehicle_data(tuple(result))  # 保存数据到数据库
 
     def server_link(self, conn, addr, record_id):
         """服务端的数据接收，在调用时使用多进程"""
+        latency_list = []
         while True:
             received = False
             try:
@@ -87,16 +88,15 @@ class ServerProcess:
                 print(f'{addr[0]} - - [{now.strftime("%d/%m/%Y %H:%M:%S")}] [socket server] data correct msg: '
                       f'"{msg}"')
 
-                # 检测发送的数据中是否发送了多余的重复值，没有则跳过
-                try:
-                    key              = cf.get('general setting', 'vehicle_key').split(',')[0]
-                    detect_msg_index = msg.index(key, msg.index(key) + 1)
-                    msg              = msg[:detect_msg_index]
-                except ValueError and IndexError:
-                    pass
-
+                start = time.time()
                 # 计算数据帧长度及发送时延
-                send_latency(msg)
+                latency_list.append(send_latency(msg))
+                # 接收硬件时延
+                str_hardware = msg.split(",")[-1]
+                hardware_latency = float(str_hardware.split(":")[-1])
+                latency_list.append(hardware_latency)
+                # 丢弃数据包中的延时部分
+                msg = msg.replace(',' + str(hardware_latency), '')
 
                 received = True
             else:
@@ -104,10 +104,12 @@ class ServerProcess:
                       f'"{msg}"')
 
             if received:
-                start = time.time()
                 self.handle_recv(msg, conn, addr, record_id)
                 # 处理时延
                 handle_latency = time.time() - start
+                latency_list.append(handle_latency)
+
+                # 将各时延上传数据库
         conn.close()
 
     def run(self):

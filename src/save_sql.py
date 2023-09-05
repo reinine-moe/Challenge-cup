@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import pymysql
-from src.util import find_config, generate_sql_statement, generate_repr_statement
+from src.util import find_config, generate_repr_statement
 
 """全局变量"""
 cf, config = find_config()
@@ -11,7 +11,7 @@ cf.read(config, encoding='utf-8')
 class Mysql:
     db_name = 'vehicledb'
     vehicle_table = 'vehicle_table'
-    account_table = 'account_table'
+    latency_table = 'latency_table'
 
     def __init__(self):
 
@@ -45,109 +45,145 @@ class Mysql:
         )
         return con
 
-    def init_table(self, is_vehicle=True):
-        if is_vehicle:
-            vehicle_keys = cf.get('general setting', 'vehicle_key').split(',')
-            key_str = ''
+    def init_table(self):
+        vehicle_keys = cf.get('general setting', 'vehicle_key').split(',')
+        key_v_str = ''
 
             # 生成语句
-            for index in range(len(vehicle_keys)):
-                if index == 0:
-                    key_str += f'\n{" " * 16}{vehicle_keys[index]} CHAR(10),\n'
-                    continue
-                elif index == len(vehicle_keys) - 1:
-                    key_str += f'{" " * 16}{vehicle_keys[index]} VARCHAR(20)\n'
-                    break
-                key_str += f'{" " * 16}{vehicle_keys[index]} VARCHAR(20),\n'
+        for index in range(len(vehicle_keys)):
+            if index == 0:
+                key_v_str += f'\n{" " * 16}{vehicle_keys[index]} CHAR(10),\n'
+                continue
+            elif index == len(vehicle_keys) - 1:
+                key_v_str += f'{" " * 16}{vehicle_keys[index]} VARCHAR(20)\n'
+                break
+            key_v_str += f'{" " * 16}{vehicle_keys[index]} VARCHAR(20),\n'
 
-            create_table = f'''
-            CREATE TABLE IF NOT EXISTS {self.vehicle_table}
-            (
-                id INT auto_increment primary key ,{key_str}
-            );
-        '''
-        else:
-            account_keys = cf.get('general setting', 'account_key').split(',')
-            create_table = f'''
-            CREATE TABLE IF NOT EXISTS {self.account_table}
-            (
-                id INT auto_increment primary key ,
-                {account_keys[0]} CHAR(20),
-                {account_keys[1]} VARCHAR(10),
-                {account_keys[2]} VARCHAR(20)
+        create_v_table = f'''
+        CREATE TABLE IF NOT EXISTS {self.vehicle_table}
+        (
+            id INT auto_increment primary key ,{key_v_str}
+        );
+    '''
 
-            );
-        '''
+        latency_keys = cf.get('general setting', 'latency_key').split(',')
+        keys_l_str = '\n'
+
+        for l_index in range(len(latency_keys)):
+            if l_index == len(latency_keys) - 1:
+                keys_l_str += f'{" " * 16}{latency_keys[l_index]} DOUBLE\n'
+                break
+            keys_l_str += f'{" " * 16}{latency_keys[l_index]} DOUBLE,\n'
+        create_l_table = f'''
+        CREATE TABLE IF NOT EXISTS {self.latency_table}
+        (
+            id INT auto_increment primary key ,{keys_l_str}
+        );
+    '''
 
         con = self.connect()
         cursor = con.cursor()
-        cursor.execute(create_table)
+        cursor.execute(create_v_table)
+        cursor.execute(create_l_table)
 
         cursor.close()
         con.close()
 
-    def save_data(self, dataset: tuple or list, is_vehicle=True):
+    def insert_one(self, key, dataset, table_name):
+        """
+        插入一条数据
+        :param key: 配置文件中的数据
+        :param dataset: 接收到的数据集
+        :param table_name: 表的名称
+        """
+        con = self.connect()
+        table_cur = con.cursor()
+        key_list = key.split(',')
 
-        assert isinstance(dataset, tuple or list) \
-               and len(cf.get('general setting', 'vehicle_key' if is_vehicle else 'account_key')), '不符合长度或类型要求'
+        symbol_str = '%s,' * len(key_list)
+        handle = f"INSERT INTO {table_name}({key}) VALUES({symbol_str[:-1]});"
+        table_cur.execute(handle, tuple(i for i in dataset))
 
+        con.commit()
+        table_cur.close()
+        con.close()
+        print(f'{table_name.split("_")[0]} record inserted\n')
+
+    def save_vehicle_data(self, dataset: tuple or list):
         def commit():
             con.commit()
             table_cur.close()
             con.close()
-            print('record inserted\n')
+            print('vehicle record inserted\n')
 
         con = self.connect()
         table_cur = con.cursor()
 
-        # 判断数据属于哪个表
-        if is_vehicle:
-            keys = cf.get('general setting', 'vehicle_key').split(',')
-            dbResult = self.fetch_data()
+        keys = cf.get('general setting', 'vehicle_key')
+        keys_list = keys.split(',')
+        dbResult = self.fetch_data(self.vehicle_table)
 
-            # 若数据库里没有数据则直接添加一条新数据
-            if len(dbResult) == 0:
-                symbol_str = '%s,' * len(keys)                   # 根据配置文件生成与之对应值的插入语句
-                key_str = generate_sql_statement(keys)           # 根据配置文件生成插入语句
+        # 若数据库里没有数据则直接添加一条新数据
+        if len(dbResult) == 0:
+            self.insert_one(keys,dataset,self.vehicle_table)
+            return
 
-                handle = f"INSERT INTO {self.vehicle_table}({key_str}) VALUES({symbol_str[:-1]});"
-                table_cur.execute(handle, tuple(i for i in dataset))
+        for data in dbResult:
+            if data[1] == 'accident' and data[3] == dataset[2]:
+                repr_str = generate_repr_statement(keys_list)     # 根据配置文件生成替换语句
+                replace = f"UPDATE {self.vehicle_table} SET {repr_str} WHERE type = 'accident' AND vid = {dataset[2]}"
+                table_cur.execute(
+                    replace, tuple(i for i in dataset if i not in ('normal', 'accident'))
+                )                                            # 不管当前传入的数据是正常车还是事故车，只要之前存入数据库中的vid被判定为事故车的话，
+                                                             # 就不会再改变此vid的类型，只更新其他参数
                 commit()
                 return
 
-            for data in dbResult:
-                if data[1] == 'accident' and data[3] == dataset[2]:
-                    repr_str = generate_repr_statement(keys)     # 根据配置文件生成替换语句
-                    replace = f"UPDATE {self.vehicle_table} SET {repr_str} WHERE type = 'accident' AND vid = {dataset[2]}"
-                    table_cur.execute(
-                        replace, tuple(i for i in dataset if i not in ('normal', 'accident'))
-                    )                                            # 不管当前传入的数据是正常车还是事故车，只要之前存入数据库中的vid被判定为事故车的话，
-                                                                 # 就不会再改变此vid的类型，只更新其他参数
-                    commit()
-                    return
+            elif data[1] == 'normal' and data[3] == dataset[2]:
+                repr_str = generate_repr_statement(keys_list, not_normal=False)
+                replace = f"UPDATE {self.vehicle_table} SET {repr_str} WHERE type = 'normal' AND vid = {dataset[2]}"
+                table_cur.execute(replace,tuple(i for i in dataset))
+                commit()
+                return
 
-                elif data[1] == 'normal' and data[3] == dataset[2]:
-                    repr_str = generate_repr_statement(keys, not_normal=False)
-                    replace = f"UPDATE {self.vehicle_table} SET {repr_str} WHERE type = 'normal' AND vid = {dataset[2]}"
-                    table_cur.execute(
-                        replace,tuple(i for i in dataset)
-                    )
-                    commit()
-                    return
-
-        symbol_str = '%s,' * len(keys)                          # 根据配置文件生成与之对应值的插入语句
-        key_str = generate_sql_statement(keys)                  # 根据配置文件生成插入语句
-
-        handle = f"INSERT INTO {self.vehicle_table}({key_str}) VALUES({symbol_str[:-1]});"
-        table_cur.execute(handle, tuple(i for i in dataset))
-
+        symbol_str = '%s,' * len(keys_list)  # 根据配置文件生成与之对应值的插入语句
+        handle = f"INSERT INTO {self.vehicle_table}({keys}) VALUES({symbol_str[:-1]});"
+        result = tuple(i for i in dataset)
+        table_cur.execute(handle, result)
         commit()
 
-    def fetch_data(self, is_vehicle=True):
+    def save_latency_data(self, dataset: tuple or list):
+        con = self.connect()
+        table_cur = con.cursor()
+
+        keys = cf.get('general setting', 'latency_key')
+        keys_list = keys.split(',')
+        dbResult = self.fetch_data(self.latency_table)
+
+        # 若数据库里没有数据则直接添加一条新数据
+        if len(dbResult) == 0:
+            self.insert_one(keys,dataset,self.latency_table)
+            return
+
+        repr_str = generate_repr_statement(keys_list)
+        replace = f"UPDATE {self.latency_table} SET {repr_str}"
+        table_cur.execute(replace, tuple(i for i in dataset))
+
+        con.commit()
+        table_cur.close()
+        con.close()
+        print('latency record inserted\n')
+
+    def fetch_data(self, table_name):
+        """
+        抓取表数据
+        :param table_name: 表名
+        :return: 表结果
+        """
         con = self.connect()
         cursor = con.cursor()
 
-        query_data = f'select * from {self.vehicle_table if is_vehicle else self.account_table}; '
+        query_data = f'select * from {table_name}; '
         cursor.execute(query_data)
 
         result = cursor.fetchall()
@@ -157,14 +193,18 @@ class Mysql:
 
         return result
 
-    def fetch_latest_time(self, is_vehicle=True):
+    def fetch_latest_time(self, table_name):
+        """
+        抓取最近录入数据的时间
+        :param table_name: 表名
+        :return: 表时间
+        """
         con = self.connect()
         cursor = con.cursor()
 
-        table = 'vehicle_table' if is_vehicle else 'account_table'
         fetch_time = "SELECT `TABLE_NAME`, `UPDATE_TIME` FROM `information_schema`.`TABLES` " \
                      f"WHERE `information_schema`.`TABLES`.`TABLE_SCHEMA` = '{self.db_name}' " \
-                     f"AND`information_schema`.`TABLES`.`TABLE_NAME` = '{table}';"
+                     f"AND`information_schema`.`TABLES`.`TABLE_NAME` = '{table_name}';"
 
         cursor.execute(fetch_time)
         result = cursor.fetchone()
@@ -173,3 +213,13 @@ class Mysql:
         con.close()
 
         return result[1]
+
+if __name__ == '__main__':
+    keys = cf.get('general setting', 'latency_key').split(',')
+    sql = Mysql()
+    sql.init_table()
+    data = [0.234,1.32423,4.123122]
+    sql.save_latency_data(data)
+    result = sql.fetch_data(sql.latency_table)
+    print(result)
+

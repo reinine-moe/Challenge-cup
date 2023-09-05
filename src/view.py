@@ -4,7 +4,7 @@ from flask import Flask
 from flask_cors import CORS
 from flask_compress import Compress
 from src.socket_connect import *
-from src.util import find_config, generate_sql_json
+from src.util import find_config, generate_vehicle_json, generate_latency_json
 import time
 import signal
 import threading
@@ -30,17 +30,18 @@ def index():
 @app.route('/<type>/api')
 def response(type):
     if type == 'vehicle':
-        result = sql.fetch_data()
-        json_result = generate_sql_json(result)
+        keys = cf.get('general setting', 'vehicle_key').split(',')
+        result = sql.fetch_data(sql.vehicle_table)
+        json_result = generate_vehicle_json(result,keys)
 
-        json_result.update({'info': {'recent upload': sql.fetch_latest_time(), 'sum': len(result)}})
+        json_result.update({'info': {'recent upload': sql.fetch_latest_time(sql.vehicle_table), 'sum': len(result)}})
         return json_result
 
-    elif type == 'account':
-        result = sql.fetch_data(False)
-        json_result = generate_sql_json(result, False)
+    elif type == 'latency':
+        keys = cf.get('general setting', 'latency_key').split(',')
+        result = sql.fetch_data(sql.latency_table)
+        json_result = generate_latency_json(result, keys)
 
-        json_result.update({'info': {'recent upload': sql.fetch_latest_time(False), 'sum': len(result)}})
         return json_result
     else:
         return {'msg': 'bad request'}
@@ -55,7 +56,7 @@ def runserver():
     signal.signal(signal.SIGTERM, signal.SIG_DFL)        # SIGTERM信号是由操作系统发送给进程，用于请求进程终止。
 
     #  创建线程
-    main_thr = threading.Thread(target=app.run, args=['192.168.117.90'])  # '192.168.0.100' '0.0.0.0'
+    main_thr = threading.Thread(target=app.run, args=['0.0.0.0'])  # '192.168.0.100' '0.0.0.0'
     main_thr.daemon = True
     main_thr.start()
     time.sleep(0.2)
@@ -66,6 +67,7 @@ def runserver():
 
     while True:
         pass
+
 
 if __name__ == '__main__':
     runserver()

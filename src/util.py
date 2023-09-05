@@ -1,26 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 from os import path, getcwd
-from datetime import datetime
 import configparser
 
 
-def generate_sql_json(dataset: tuple, is_vehicle=True):
+def generate_vehicle_json(dataset: tuple, keys):
     """
-    封装数据库数据
+    根据配置文件封装数据库车辆数据
     :param dataset: 数据库返回的数据组
-    :param is_vehicle:  类型选择: True为车辆数据, False为账号数据
+    :param keys: 配置文件的数据
     :return: 封装好的字典(json)
     """
-
-    # 读取配置文件
-    cf, config = find_config()
-    cf.read(config, encoding='utf-8')
-
-    if is_vehicle:
-        keys = cf.get('general setting', 'vehicle_key').split(',')
-    else:
-        keys = cf.get('general setting', 'account_key').split(',')
 
     # 生成json模板
     total_json = {}
@@ -41,43 +31,29 @@ def generate_sql_json(dataset: tuple, is_vehicle=True):
         # 归零操作，并转到下一组数据
         dataset_index += 1
 
-    # 根据车辆情况添加基站信息
-    info = {'type': '基站', 'conditions': '无事故', 'vid': None, 'time': None, 'longitude': None, 'latitude': None}
-    for condition in dataset:
-        if condition[1] == 'accident':
-            info['conditions'] = '事故发生'
-            info['vid']        = condition[3]
-            info['time']       = condition[4]
-            info['longitude']  = condition[5]
-            info['latitude']   = condition[6]
-            break
-    total_json.update({'基站': info})
-
-    result = {}
-    result.update({'data': total_json})
-
-    return result
+    return total_json
 
 
-def generate_sql_statement(handle):
-    """
-    生成数据库语句对应值
-    :param handle: 根据配置文件生成的列表
-    :return: 返回数据库需要的语句
-    """
-    key_str = ''
-    for index in range(len(handle)):
-        if index == len(handle) - 1:
-            key_str += handle[index]
-            continue
-        key_str += handle[index] + ','
+def generate_latency_json(dataset: tuple, keys):
 
-    return key_str
+    total_json = {}
+    dataset = [list(_) for _ in dataset]
+    for datas in dataset:
+        datas[0] = ''
+
+    # 导入标签数据
+    total_json.update({'labels': tuple(keys)})
+
+    # 生成模板
+    for index,datas in enumerate(dataset):
+        total_json.update({f'values{index+1}': tuple(datas)})
+    return total_json
 
 
 def generate_repr_statement(handle, not_normal=True):
     """
         生成数据库替换语句
+        :param not_normal:
         :param handle: 根据配置文件生成的列表
         :return: 返回数据库需要的语句
     """
@@ -103,6 +79,7 @@ def find_config():
 
     return cf, config
 
+
 def send_latency(string):
     """
     计算发送时延
@@ -117,3 +94,9 @@ def send_latency(string):
         return None
     latency = bit / 10 ** 9
     return latency
+
+if __name__ == '__main__':
+    a = ((1, 1.5567, 0.0076, 0.00008),)
+    keys = ['send_latency', 'hardware_latency', 'handle_latency']
+    result = generate_latency_json(a,keys)
+    print(result)
