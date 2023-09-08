@@ -67,10 +67,13 @@ class Mysql:
     '''
 
         latency_keys = cf.get('general setting', 'latency_key').split(',')
-        keys_l_str = '\n'
+        keys_l_str = ''
 
         for l_index in range(len(latency_keys)):
-            if l_index == len(latency_keys) - 1:
+            if l_index == 0:
+                keys_l_str += f'\n{" " * 16}{latency_keys[l_index]} CHAR(4),\n'
+                continue
+            elif l_index == len(latency_keys) - 1:
                 keys_l_str += f'{" " * 16}{latency_keys[l_index]} DOUBLE\n'
                 break
             keys_l_str += f'{" " * 16}{latency_keys[l_index]} DOUBLE,\n'
@@ -153,6 +156,12 @@ class Mysql:
         commit()
 
     def save_latency_data(self, dataset: tuple or list):
+        def commit():
+            con.commit()
+            table_cur.close()
+            con.close()
+            print('latency record inserted\n')
+
         con = self.connect()
         table_cur = con.cursor()
 
@@ -165,14 +174,23 @@ class Mysql:
             self.insert_one(keys,dataset,self.latency_table)
             return
 
-        repr_str = generate_repr_statement(keys_list)
-        replace = f"UPDATE {self.latency_table} SET {repr_str}"
-        table_cur.execute(replace, tuple(i for i in dataset))
+        protocol = dataset[0]
+        for data in dbResult:
+            if data[1] == protocol:
+                repr_str = generate_repr_statement(keys_list)     # 根据配置文件生成替换语句
+                print(repr_str)
+                replace = f"UPDATE {self.latency_table} SET {repr_str} WHERE 类型 = '{protocol}'"
+                table_cur.execute(
+                    replace, tuple(i for i in dataset)
+                )
+                commit()
+                return
 
-        con.commit()
-        table_cur.close()
-        con.close()
-        print('latency record inserted\n')
+        symbol_str = '%s,' * len(keys_list)  # 根据配置文件生成与之对应值的插入语句
+        handle = f"INSERT INTO {self.latency_table}({keys}) VALUES({symbol_str[:-1]});"
+        result = tuple(i for i in dataset)
+        table_cur.execute(handle, result)
+        commit()
 
     def fetch_data(self, table_name):
         """
@@ -218,8 +236,6 @@ if __name__ == '__main__':
     keys = cf.get('general setting', 'latency_key').split(',')
     sql = Mysql()
     sql.init_table()
-    data = [0.234,1.32423,4.123122]
+    data = ['udp',0.12,0.021,0.238,0.38,0.0683]
     sql.save_latency_data(data)
-    result = sql.fetch_data(sql.latency_table)
-    print(result)
 

@@ -40,7 +40,7 @@ class ServerProcess:
 
         # 如果数据为正常车并且事故车有被记录
         if 'normal' in datas and record_list:
-            client.send(f"{record_list.pop()}".encode('utf-8'))
+            client.send(f"{time.time()}".encode('utf-8'))
 
         # 如果数据为事故车并且当前数据没有被记录
         elif 'accident' in datas and datas[2] not in record_list:
@@ -110,6 +110,7 @@ class ServerProcess:
                 latency_list.append(handle_latency)
 
                 # 将各时延上传数据库
+                sql.save_latency_data(latency_list)
         conn.close()
 
     def run(self):

@@ -42,6 +42,7 @@ def generate_latency_json(dataset: tuple, keys):
         datas[0] = ''
 
     # 导入标签数据
+    keys.insert(0, "")
     total_json.update({'labels': tuple(keys)})
 
     # 生成模板
