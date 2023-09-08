@@ -35,19 +35,17 @@ def generate_vehicle_json(dataset: tuple, keys):
 
 
 def generate_latency_json(dataset: tuple, keys):
-
     total_json = {}
     dataset = [list(_) for _ in dataset]
-    for datas in dataset:
-        datas[0] = ''
-
     # 导入标签数据
     keys.insert(0, "")
-    total_json.update({'labels': tuple(keys)})
+    total_json.update({'labels': keys})
 
     # 生成模板
     for index,datas in enumerate(dataset):
-        total_json.update({f'values{index+1}': tuple(datas)})
+        datas[0] = ''
+        protocol = datas.pop(1)
+        total_json.update({f'{protocol}': datas})
     return total_json
 
 
@@ -97,7 +95,7 @@ def send_latency(string):
     return latency
 
 if __name__ == '__main__':
-    a = ((1, 1.5567, 0.0076, 0.00008),)
-    keys = ['send_latency', 'hardware_latency', 'handle_latency']
+    a = ((1, 'udp', 0.12, 0.021, 0.238, 0.38, 0.0683), (2, 'tcp', 0.1234, 0.9659, 0.23854, 0.33889, 0.83))
+    keys = ['类型','服务器处理时延','链路时延','车辆状态处理时延','车辆发送时延','传播时延']
     result = generate_latency_json(a,keys)
     print(result)

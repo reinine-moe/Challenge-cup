@@ -40,7 +40,9 @@ class ServerProcess:
 
         # 如果数据为正常车并且事故车有被记录
         if 'normal' in datas and record_list:
-            client.send(f"{time.time()}".encode('utf-8'))
+            now = datetime.now()
+            milliseconds = now.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+            client.send(f"{milliseconds}".encode('utf-8'))
 
         # 如果数据为事故车并且当前数据没有被记录
         elif 'accident' in datas and datas[2] not in record_list:
@@ -87,16 +89,34 @@ class ServerProcess:
             elif ',' in msg and type(msg) is str:
                 print(f'{addr[0]} - - [{now.strftime("%d/%m/%Y %H:%M:%S")}] [socket server] data correct msg: '
                       f'"{msg}"')
-
+                # 如果检测到车辆重复发送数据包
                 start = time.time()
-                # 计算数据帧长度及发送时延
+                key = cf.get('general setting', 'latency_key')
+                len_key = len(key.split(','))
+                msg_list = msg.split(',')
+                # 如果检测到车辆重复发送数据包则删除多余内容
+                msg_list = msg_list[:len_key + 1]
+                # 获取各时延
+                for i in msg_list:
+                    if 'tcp'.upper() in i:
+                        latency_list.append('tcp')
+                        # tcp链路时延
+                        tcp = i.split(':')[-1]
+                        latency_list.append(tcp)
+                    elif 'udp'.upper() in i:
+                        latency_list.append('udp')
+                        # udp链路时延
+                        udp = i.split(':')[-1]
+                        latency_list.append(udp)
+                    elif 'Processing' in i:
+                        # 车辆状态处理时延
+                        v_handle_latency = i.split(':')[-1]
+                        latency_list.append(v_handle_latency)
+                # 计算数据帧长度及车辆发送时延
                 latency_list.append(send_latency(msg))
-                # 接收硬件时延
-                str_hardware = msg.split(",")[-1]
-                hardware_latency = float(str_hardware.split(":")[-1])
-                latency_list.append(hardware_latency)
-                # 丢弃数据包中的延时部分
-                msg = msg.replace(',' + str(hardware_latency), '')
+
+                # 计算传播时延
+                latency_list.append(0)
 
                 received = True
             else:
@@ -105,12 +125,12 @@ class ServerProcess:
 
             if received:
                 self.handle_recv(msg, conn, addr, record_id)
-                # 处理时延
-                handle_latency = time.time() - start
-                latency_list.append(handle_latency)
 
+                # 处理时延
+                handle_latency = (time.time() - start) * 10 ** 3
+                latency_list.insert(1, handle_latency)
                 # 将各时延上传数据库
-                sql.save_latency_data(latency_list)
+                sql.insert_one(key,latency_list,'latency_table')
         conn.close()
 
     def run(self):

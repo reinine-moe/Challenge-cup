@@ -236,6 +236,7 @@ if __name__ == '__main__':
     keys = cf.get('general setting', 'latency_key').split(',')
     sql = Mysql()
     sql.init_table()
-    data = ['udp',0.12,0.021,0.238,0.38,0.0683]
+    data = ['tcp',0.1234,0.9659,0.23854,0.33889,0.83]
     sql.save_latency_data(data)
+    print((sql.fetch_data(sql.latency_table)))
 
