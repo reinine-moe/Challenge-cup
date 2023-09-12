@@ -73,7 +73,8 @@ class ServerProcess:
 
     def server_link(self, conn, addr, record_id):
         """服务端的数据接收，在调用时使用多进程"""
-        latency_list = []
+        tcp_latency_list = []
+        udp_latency_list = []
         while True:
             received = False
             try:
@@ -89,35 +90,52 @@ class ServerProcess:
             elif ',' in msg and type(msg) is str:
                 print(f'{addr[0]} - - [{now.strftime("%d/%m/%Y %H:%M:%S")}] [socket server] data correct msg: '
                       f'"{msg}"')
-                # 如果检测到车辆重复发送数据包
-                start = time.time()
-                key = cf.get('general setting', 'latency_key')
-                len_key = len(key.split(','))
-                msg_list = msg.split(',')
-                # 如果检测到车辆重复发送数据包则删除多余内容
-                msg_list = msg_list[:len_key + 1]
-                # 获取各时延
-                for i in msg_list:
-                    if 'tcp'.upper() in i:
-                        latency_list.append('tcp')
-                        # tcp链路时延
-                        tcp = i.split(':')[-1]
-                        latency_list.append(tcp)
-                    elif 'udp'.upper() in i:
-                        latency_list.append('udp')
-                        # udp链路时延
-                        udp = i.split(':')[-1]
-                        latency_list.append(udp)
-                    elif 'Processing' in i:
-                        # 车辆状态处理时延
-                        v_handle_latency = i.split(':')[-1]
-                        latency_list.append(v_handle_latency)
-                # 计算数据帧长度及车辆发送时延
-                latency_list.append(send_latency(msg))
+                if 'TCP' and 'UDP' in msg:
 
-                # 计算传播时延
-                latency_list.append(0)
+                    # 如果检测到车辆重复发送数据包
+                    start = time.time()
+                    msg_list = msg.split(',')
+                    key = cf.get('general setting', 'latency_key')
+                    wrong_data = False
+                    # 获取各时延
+                    for i in msg_list:
+                        if 'TCP' in i:
+                            tcp_latency_list.append('tcp')
+                            # tcp链路时延
+                            tcp = i.split(':')[-1]
+                            if float(udp) < 0:
+                                wrong_data = True
+                                break
+                            tcp_latency_list.append(float(tcp))
 
+                        if 'UDP' in i:
+                            udp_latency_list.append('udp')
+                            # udp链路时延
+                            udp = i.split(':')[-1]
+                            if float(udp) < 0:
+                                wrong_data = True
+                                break
+                            udp_latency_list.append(float(udp))
+
+                        if 'Processing' in i:
+                            # 车辆状态处理时延
+                            v_handle_latency = i.split(':')[-1]
+                            tcp_latency_list.append(float(v_handle_latency))
+                            udp_latency_list.append(float(v_handle_latency))
+
+                    # 计算数据帧长度及车辆发送时延
+                    tcp_latency_list.append(send_latency(msg))
+                    udp_latency_list.append(send_latency(msg))
+
+                    # 计算传播时延
+                    tcp_latency_list.append(0)
+                    udp_latency_list.append(0)
+
+                    if wrong_data:
+                        tcp_latency_list = []
+                        udp_latency_list = []
+                else:
+                    pass
                 received = True
             else:
                 print(f'{addr[0]} - - [{now.strftime("%d/%m/%Y %H:%M:%S")}] [socket server] data wrong msg: '
@@ -127,10 +145,14 @@ class ServerProcess:
                 self.handle_recv(msg, conn, addr, record_id)
 
                 # 处理时延
-                handle_latency = (time.time() - start) * 10 ** 3
-                latency_list.insert(1, handle_latency)
-                # 将各时延上传数据库
-                sql.insert_one(key,latency_list,'latency_table')
+                if tcp_latency_list and udp_latency_list:
+                    handle_latency = (time.time() - start) * 10 ** 3
+                    tcp_latency_list.insert(1, handle_latency)
+                    udp_latency_list.insert(1, handle_latency)
+                    # 将各时延上传数据库
+                    sql.insert_one(key,tcp_latency_list,'latency_table')
+                    sql.insert_one(key, udp_latency_list, 'latency_table')
+
         conn.close()
 
     def run(self):
