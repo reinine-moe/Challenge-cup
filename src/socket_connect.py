@@ -4,7 +4,7 @@ from multiprocessing import Queue
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from src.save_sql import Mysql
-from src.util import find_config, send_latency
+from src.util import find_config, send_latency, cur_time2ms, filter_packet
 
 """全局配置"""
 sql = Mysql()
@@ -41,8 +41,8 @@ class ServerProcess:
         # 如果数据为正常车并且事故车有被记录
         if 'normal' in datas and record_list:
             now = datetime.now()
-            milliseconds = now.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-            client.send(f"{milliseconds}".encode('utf-8'))
+            milliseconds = cur_time2ms(now)
+            client.send(f"{record_list.pop()},{milliseconds}".encode('utf-8'))
 
         # 如果数据为事故车并且当前数据没有被记录
         elif 'accident' in datas and datas[2] not in record_list:
@@ -90,6 +90,8 @@ class ServerProcess:
             elif ',' in msg and type(msg) is str:
                 print(f'{addr[0]} - - [{now.strftime("%d/%m/%Y %H:%M:%S")}] [socket server] data correct msg: '
                       f'"{msg}"')
+
+                msg = filter_packet(msg)
                 if 'TCP' and 'UDP' in msg:
 
                     # 如果检测到车辆重复发送数据包

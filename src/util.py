@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 from os import path, getcwd
+from datetime import datetime
 import configparser
 
 
@@ -38,7 +39,7 @@ def generate_latency_json(dataset: tuple, keys):
     total_json = {}
     dataset = [list(_) for _ in dataset]
     # 导入标签数据
-    keys.insert(0, "")
+    keys[0] = ''
     total_json.update({'labels': keys})
 
     # 生成模板
@@ -94,8 +95,37 @@ def send_latency(string):
     latency = bit / 10 ** 9
     return latency
 
+
+def cur_time2ms(now: datetime.now):
+    """
+    当前时间转毫秒
+    :param now: 此参数需要 datetime.now 的时间
+    :return: 总毫秒
+    """
+    cur_time = now.strftime("%H:%M:%S:%f")[:-3]
+    time_list = [int(_) for _ in cur_time.split(":")]
+    total_ms = (time_list[0] * 3600 + time_list[1] * 60 + time_list[2]) * 1000 + time_list[3]
+    return total_ms
+
+
+def filter_packet(data):
+    """
+    过滤因为硬件过多发送重复数据包
+    :param data:
+    :return:
+    """
+    handle_data_list = data.split(',')[:8]              # [:8]：默认发出的数据包为8项以内
+    processing_lat = handle_data_list[-1]               # 这里指的是数据包的最后一项：硬件处理时延
+
+    # 如果在最后一项中发现了多余内容（通常是type），则删除此索引之后的内容
+    if 'type' in processing_lat:
+        index = processing_lat.index('type')
+        handle_data_list[-1] = processing_lat[:index]
+
+    data = ",".join(c for c in handle_data_list)        # 重新拼装正确的数据包格式
+    return data
+
+
 if __name__ == '__main__':
-    a = ((1, 'udp', 0.12, 0.021, 0.238, 0.38, 0.0683), (2, 'tcp', 0.1234, 0.9659, 0.23854, 0.33889, 0.83))
-    keys = ['类型','服务器处理时延','链路时延','车辆状态处理时延','车辆发送时延','传播时延']
-    result = generate_latency_json(a,keys)
-    print(result)
+    a = datetime.now()
+    print(cur_time2ms(a))
